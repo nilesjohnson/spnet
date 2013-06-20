@@ -344,11 +344,11 @@ body#front.with-cu-identity #header form {
 	padding-bottom: 1pc;
 	margin-bottom: 2pc;
         }
-#content dt {
+#content #recent-activity dt {
         margin-top: 1pc;
 	padding: 5px;
         }
-#content dd {
+#content #recent-activity dd {
         margin-left: 0;
 	padding: 5px 5px 5px 2pc;
 }
