@@ -346,7 +346,12 @@ body#front.with-cu-identity #header form {
         }
 #content dt {
         margin-top: 1pc;
+	padding: 5px;
         }
+#content dd {
+        margin-left: 0;
+	padding: 5px 5px 5px 2pc;
+}
 
 #content .recent-post {
         border-right: 5px solid #ee9;
