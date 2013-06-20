@@ -49,7 +49,7 @@ or feature suggestions</A>.</p>
 
 <h3>Your Subscriptions</h3>
 
-<dl>
+<dl id="subscriptions">
 {% for i,subscr in enumerate(user.subscriptions) %}
 <dt>[ {{- i + 1 -}} ]:
 <A HREF="{{- subscr.author.get_value('local_url') -}}">
@@ -98,7 +98,7 @@ them an invitation post).<br>
 
 <h3>Papers You Tagged as Interesting</h3>
 
-<dl>
+<dl id="interesting">
 {% for i,interest in enumerate(user.interests) %}
 <dt>[ {{- i + 1 -}} ]:
 <A HREF="{{- interest.parent.get_value('local_url') -}}">
@@ -115,7 +115,7 @@ them an invitation post).<br>
 
 <h3>Your Reading List</h3>
 
-<dl>
+<dl id="reading-list">
 {% for i,paper in enumerate(user.readingList[-1::-1]) %}
 <dt>[ {{- i + 1 -}} ]:
 <A HREF="{{- paper.get_value('local_url') -}}">
@@ -157,17 +157,17 @@ or learn more about how it works.</p>
 {% endif %}
 
 <h3>Recent Activity on SelectedPapers.net</h3>
-<dl>
+<dl id="recent-activity">
 {% for e in recentEvents %}
 {% if e.__class__.__name__ == 'Post' %}
-<dt>
+<dt class="recent-post">
 <A HREF="{{- e.author.get_local_url() -}}">
 {{ e.author.name }}
 </A> commented on
 <A HREF="{{- e.parent.get_value('local_url') -}}">{{- e.parent.title -}}</A>
 ( {{- display_datetime(e.published) -}} )
 </dt>
-<dd>
+<dd class="recent-post">
 <div class="list-comments">{{ e.text }}
 {% if hasattr(post, 'url') %}
 <a href=" {{- e.url -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;">
@@ -177,21 +177,21 @@ or learn more about how it works.</p>
 </dd>
 
 {% elif e.__class__.__name__ == 'Reply' %}
-<dt>
+<dt class="recent-reply">
 <A HREF="{{- e.author.get_local_url() -}}">
 {{ e.author.name }}
 </A> replied RE: 
 <A HREF="{{- e.parent.get_value('local_url') -}}">{{- e.parent.title -}}</A>
 ( {{- display_datetime(e.published) -}} )
 </dt>
-<dd>
+<dd class="recent-reply">
 <div class="list-comments">{{ e.text }}
 </div>
 </dd>
 
 
 {% elif e.__class__.__name__ == 'Recommendation' %}
-<dt>
+<dt class="recent-recommendation">
 <A HREF="{{- e.author.get_local_url() -}}">
 {{ e.author.name }}
 </A>: <A HREF="{{- e.get_local_url() -}} ">
@@ -204,7 +204,7 @@ or learn more about how it works.</p>
 <img src="/images/reply.jpg" title="Click here to reply to this comment on Google+"></a>
 {% endif %}
 </dt>
-<dd>
+<dd class="recent-recommendation">
 <span class="list-identifier">Recommended 
 <A HREF="{{- e.parent.get_value('local_url') -}}">{{- e.parent.title -}}</A>
 {% if e.sigs %}
@@ -222,8 +222,8 @@ or learn more about how it works.</p>
 
 
 {% elif e.__class__.__name__ == 'SIG' %}
-<dt><A href="{{- e.get_local_url() -}}">{{- e.name -}} </A></dt>
-<dd>
+<dt class="recent-sig"><A href="{{- e.get_local_url() -}}">{{- e.name -}} </A></dt>
+<dd class="recent-sig">
 <div class="list-comments">
 new topic created ( {{- display_datetime(e.published) -}} )
 </div>

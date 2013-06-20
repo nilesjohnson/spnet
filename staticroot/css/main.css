@@ -344,10 +344,30 @@ body#front.with-cu-identity #header form {
 	padding-bottom: 1pc;
 	margin-bottom: 2pc;
         }
-
 #content dt {
         margin-top: 1pc;
         }
+
+#content .recent-post {
+        border-right: 5px solid #ee9;
+        }
+#content .recent-recommendation {
+        border-right: 5px solid #ae9;
+        }
+#content .recent-reply{
+        border-right: 5px solid #c6c;
+        }
+#content .recent-sig {
+        border-right: 5px solid #ccc;
+        }
+
+#content .recent-reply,
+#content .recent-sig {
+        background-color: #f0f0f0;
+	color: #555;
+        }
+
+
 
 /* Index page tagline */
 p.tagline {
