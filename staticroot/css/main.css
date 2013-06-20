@@ -1,6 +1,6 @@
 /****************************************
- * arXiv.org Cascading Style Sheet
- * $Date: 2012/09/18 13:03:50 $
+ * Based on stylesheet from
+ * arXiv.org Cascading Style Sheet of 2012/09/18 13:03:50
  ****************************************/
 
 /****************************************
@@ -330,9 +330,24 @@ body#front.with-cu-identity #header form {
  ****************************************/
 
 #content {
-	margin: .7em;
-	font-size: 90%;
+        max-width: 960px;
+	margin: auto;
+	font-size: 100%;
+    	line-height: 130%;
 	}
+#content .title {
+        line-height: 150%;
+        }
+
+#content dl {
+        border-bottom: 1px solid #666;
+	padding-bottom: 1pc;
+	margin-bottom: 2pc;
+        }
+
+#content dt {
+        margin-top: 1pc;
+        }
 
 /* Index page tagline */
 p.tagline {
