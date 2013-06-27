@@ -20,7 +20,7 @@ def people_link_list(people, maxNames=2):
         l.append('<A HREF="%s">%s</A>' % (p.get_local_url(), p.name))
     s = ', '.join(l)
     if len(people) > maxNames:
-        s += ' and %d others' (len(people) - maxNames)
+        s += ' and %d others' % (len(people) - maxNames)
     return s
 
 timeUnits = (('seconds', timedelta(minutes=1), lambda t:int(t.seconds)),
@@ -102,21 +102,33 @@ class TemplateView(object):
     def __call__(self, doc=None, **kwargs):
         f = self.template.render
         kwargs.update(self.kwargs)
+        try:
+            kwargs.update(cherrypy.session['viewArgs'])
+        except KeyError:
+            pass
         if doc is not None:
             kwargs[self.name] = doc
         try:
             user = cherrypy.session['person']
         except KeyError:
-            user = None
-        else:
-            if getattr(user, '_forceReload', False):
-                user = user.__class__(user._id) # reload from DB
-                cherrypy.session['person'] = user # save on session
+            user = cherrypy.session['person'] = None
+        if getattr(user, '_forceReload', False):
+            user = user.__class__(user._id) # reload from DB
+            cherrypy.session['person'] = user # save on session
         return f(kwargs=kwargs, hasattr=hasattr, enumerate=enumerate,
                  urlencode=urllib.urlencode, list_people=people_link_list,
                  getattr=getattr, str=str, map=map_helper, user=user,
                  display_datetime=display_datetime, timesort=timesort,
                  recentEvents=recentEventsDeque, **kwargs) # apply template
+
+def get_view_options():
+    'get dict of session kwargs passed to view templates'
+    try:
+        return cherrypy.session['viewArgs']
+    except KeyError:
+        d = {}
+        cherrypy.session['viewArgs'] = d
+        return d
 
 ##################################################################
 
@@ -211,6 +223,7 @@ recentEventsDeque = collections.deque(maxlen=20)
 
 def load_recent_events(paperClass, topicClass, dq=recentEventsDeque,
                        limit=20):
+    'obtain list of recent events stored in our database'
     l = []
     for paper in paperClass.find_obj(sortKeys={'recommendations.published':-1},
                                      limit=limit):
@@ -231,3 +244,15 @@ def load_recent_events(paperClass, topicClass, dq=recentEventsDeque,
         dq.appendleft(r)
         
         
+def poll_recent_events(paperClass, topicClass, interval=300):
+    'update recentEventsDeque every interval; run in separate thread'
+    import time
+    import gc
+    dq = collections.deque(maxlen=20)
+    while True:
+        load_recent_events(paperClass, topicClass, dq)
+        recentEventsDeque.clear()
+        recentEventsDeque.extend(dq)
+        dq.clear()
+        gc.collect() # frequent GC seems to keep RSS from growing unsustainably
+        time.sleep(interval)

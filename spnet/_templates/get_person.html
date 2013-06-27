@@ -3,6 +3,10 @@
 <head>
 <link rel="stylesheet" type="text/css" media="screen" href="/css/main.css" />
 <title> {{- person.name -}} </title>
+
+<script type="text/javascript" src="https://c328740.ssl.cf1.rackcdn.com/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML,Safe">
+</script>
+
 </head>
 
 <body>
@@ -106,12 +110,12 @@ them an invitation post).<br>
 {{ rec.parent.title }} </A>
 </span>
 <div class="list-comments">
-{{ rec.text }}
-{% for reply in timesort(rec.get_replies()) %}
+{{ rec.get_text() }}
+{% for reply in timesort(rec.get_replies(), reverse=False) %}
 <li><A HREF="{{- reply.author.get_local_url() -}}">
 {{ reply.author.name }}
 </A> replies ( {{- display_datetime(reply.published) -}} ):
-{{ reply.text }}
+{{ reply.get_text() }}
 </li>
 {% endfor %}
 </div>
@@ -155,16 +159,16 @@ RE: topics:
 {% endif %}
 ( {{- display_datetime(post.published) -}} )</dt>
 <dd>
-<div class="list-comments">{{ post.text }}
+<div class="list-comments">{{ post.get_text() }}
 {% if hasattr(post, 'url') %}
 <a href=" {{- post.url -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;">
 <img src="/images/reply.jpg" title="Click here to reply to this comment on Google+"></a>
 {% endif %}
-{% for reply in timesort(post.get_replies()) %}
+{% for reply in timesort(post.get_replies(), reverse=False) %}
 <li><A HREF="{{- reply.author.get_local_url() -}}">
 {{ reply.author.name }}
 </A> replies ( {{- display_datetime(reply.published) -}} ):
-{{ reply.text }}
+{{ reply.get_text() }}
 </li>
 {% endfor %}
 </div>

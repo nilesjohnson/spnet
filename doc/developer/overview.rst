@@ -123,11 +123,11 @@ easy to install, mainly a matter of getting its dependencies
 
     pip install feedparser lxml Jinja2 google-api-python-client requests pymongo cherrypy xmltodict
 
-  Also download python ``dateutils`` package (get the version for Python 2),
-  and run ``python setup.py install`` to install it.  One way you can
-  do this is::
-
-    pip install dateutils
+  Also download the `dateutil <http://labix.org/python-dateutil>`_
+  package (get the version for Python 2),
+  and run ``python setup.py install`` to install it.
+  Note this is not the same thing as the ``dateutils`` package
+  available on the Python Package Index.
 
 * Now create and edit the configuration files for your local install.
   These files are not tracked in the git repository because they need
