@@ -24,7 +24,7 @@ class InterestCollection(ArrayDocCollection):
                 s = view.report_error('TRAP set_interest by different user!', 403,
                                       "You cannot change someone else's settings!")
                 return rest.Response(s)
-        except KeyError:
+        except (KeyError, AttributeError):
             s = view.report_error('TRAP set_interest, not logged in!', 401,
                                   'You must log in to access this interface')
             return rest.Response(s)
@@ -37,7 +37,7 @@ class InterestCollection(ArrayDocCollection):
     def set_interest(self, personID, topic, state, parents):
         try:
             interest = self._GET(personID, parents)
-        except KeyError:
+        except (KeyError, AttributeError):
             if state:
                 person = core.Person(personID)
                 docData = dict(author=personID, topics=[topic],
@@ -142,7 +142,7 @@ class ArxivCollection(ParentCollection):
             if queryResults.get_page(ipage, self.collectionArgs['uri'],
                                      searchString=searchString):
                 return queryResults
-        except KeyError:
+        except (KeyError, AttributeError):
             pass # no stored queryResults, so construct it
         pbl = view.PaperBlockLoader(arxiv.search_arxiv,
                                     uri=self.collectionArgs['uri'])
@@ -168,7 +168,7 @@ class PubmedCollection(ParentCollection):
             if queryResults.get_page(ipage, self.collectionArgs['uri'],
                                      searchString=searchString):
                 return queryResults
-        except KeyError:
+        except (KeyError, AttributeError):
             pass # no stored queryResults, so construct it
         try:
             ps = pubmed.PubmedSearch(searchString, block_size)

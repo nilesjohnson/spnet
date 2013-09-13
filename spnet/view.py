@@ -104,14 +104,14 @@ class TemplateView(object):
         kwargs.update(self.kwargs)
         try:
             kwargs.update(cherrypy.session['viewArgs'])
-        except KeyError:
+        except (KeyError, AttributeError):
             pass
         if doc is not None:
             kwargs[self.name] = doc
         try:
             user = cherrypy.session['person']
-        except KeyError:
-            user = cherrypy.session['person'] = None
+        except (KeyError, AttributeError):
+            user = None
         if getattr(user, '_forceReload', False):
             user = user.__class__(user._id) # reload from DB
             cherrypy.session['person'] = user # save on session
@@ -125,7 +125,7 @@ def get_view_options():
     'get dict of session kwargs passed to view templates'
     try:
         return cherrypy.session['viewArgs']
-    except KeyError:
+    except (KeyError, AttributeError):
         d = {}
         cherrypy.session['viewArgs'] = d
         return d
@@ -208,7 +208,7 @@ class PaperBlockLoader(object):
             try:
                 docID = d['id']
                 self.docs[docID] = d
-            except KeyError:
+            except (KeyError, AttributeError):
                 pass
         return l
     def get_doc_data(self, docID):
