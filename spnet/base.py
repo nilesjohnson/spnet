@@ -2,6 +2,7 @@ from bson.objectid import ObjectId
 from bson.errors import InvalidId
 from time import mktime, struct_time
 from datetime import datetime
+import re
 
 
 class IdString(str):
@@ -231,6 +232,8 @@ class EmbeddedDocBase(Document):
             self.__dict__['parent'] = parent # bypass LinkDescriptor mech
         else:
             self._parent_link = parent
+    def get_parent_url(self):
+        return self._parent_url % self._parent_link
 
 class EmbeddedDocument(EmbeddedDocBase):
     'stores a document inside another document in mongoDB'
@@ -246,6 +249,13 @@ class EmbeddedDocument(EmbeddedDocBase):
             except KeyError: # insert new record in database
                 if not docData: # get data from external query
                     docData = self._query_external(fetchID)
+                fetchID2 = docData[self._dbfield.split('.')[-1]]
+                if fetchID2 != fetchID:
+                    try:
+                        Document.__init__(self, fetchID2)
+                        return # already have this doc, don't duplicate!
+                    except KeyError:
+                        pass
                 if parent is None:
                     self._set_parent(self._insert_parent(docData))
                     subdocField = self._dbfield.split('.')[0]
@@ -307,6 +317,13 @@ def filter_array_docs(array, keyField, subID):
                 yield record
         elif v == subID: # regular field
             yield record
+        elif isinstance(subID, dict):
+            subquery = subID.items()
+            if len(subquery) == 1 and subquery[0][0] == '$regex':
+                if re.search(subquery[0][1], v):
+                    yield record
+            else:
+                raise ValueError('non-regex query ops not implemented')
         
 class ArrayDocument(EmbeddedDocBase):
     '''stores a document inside an array in mongoDB.
@@ -426,12 +443,16 @@ class ArrayDocument(EmbeddedDocBase):
         if idOnly:
             fields = {klass._dbfield:1}
         arrayField, keyField = klass._dbfield.split('.')
+        if not fields: # get this array
+            fields = {arrayField:1}
         filters = []
         for k,v in queryDict.items():
             queryFields = k.split('.')
             if queryFields[0] == arrayField:
                 filters.append((queryFields[1], v))
-        for d in klass.coll.find(queryDict, fields, **kwargs):
+        if not queryDict: # get docs containing this array
+            queryDict = {arrayField: {'$exists':True}}
+        for d in klass.coll.find(queryDict, fields, **kwargs): # query db
             try:
                 array = d[arrayField]
             except KeyError:
@@ -450,8 +471,7 @@ class ArrayDocument(EmbeddedDocBase):
     def find_obj(klass, queryDict={}, **kwargs):
         'same as find() but returns objects'
         arrayField = klass._dbfield.split('.')[0]
-        for parentID, d in klass.find(queryDict, {arrayField:1},
-                                      False, True, **kwargs):
+        for parentID, d in klass.find(queryDict, None, False, True, **kwargs):
             yield klass(docData=d, parent=parentID, insertNew=False)
 
     @classmethod

@@ -4,6 +4,9 @@
 <link rel="stylesheet" type="text/css" media="screen" href="/css/arXiv.css" />
 <title> {{- topic.name -}} </title>
 
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js">
+</script>
+
 <script type="text/javascript" src="https://c328740.ssl.cf1.rackcdn.com/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML,Safe">
 </script>
 
@@ -32,6 +35,9 @@
 <option value="PMID">Pubmed ID</option>
 <option value="pubmed">Pubmed</option>
 <option value="ncbipubmed">Pubmed (ncbi)</option>
+<option value="spnetPerson">People on spnet</option>
+<option value="topic">Topics on spnet</option>
+<option value="comment">Comments on spnet</option>
 </select>
 <input type="submit" value="Go!" /><br />
 </form>
@@ -61,6 +67,8 @@
 {{ rec.parent.title }} </A>
 </span>
 <div class="list-comments">
+<input type="checkbox" id="rectoggle {{- i -}}"/>Show discussion.<BR>
+<div id="rectext {{- i -}}" style="display: none">
 {{ rec.get_text() }}
 {% for reply in timesort(rec.get_replies(), reverse=False) %}
 <li><A HREF="{{- reply.author.get_local_url() -}}">
@@ -70,17 +78,27 @@
 </li>
 {% endfor %}
 </div>
+</div>
 </dd>
+
+<script>
+$( "#rectoggle {{- i -}}" ).click(function() {
+  $( "#rectext {{- i -}}" ).toggle();
+});
+</script>
 {% endfor %}
 </dl>
 {% endif %}
 
 
-{% if topic.posts %}
+{% if len(topic.posts) > len(topic.recommendations) %}
 <h3>Discussion</h3>
 <dl>
-{% for i,post in enumerate(timesort(topic.posts)) %}
-<dt>[ {{- i + 1 -}} ]
+{% set i = 0 %}
+{% for post in timesort(topic.posts) %}
+{% if not post.is_rec() %}
+{% set i = i + 1 %}
+<dt>[ {{- i -}} ]
 <A HREF="{{- post.author.get_local_url() -}}">
 {{ post.author.name }}
 </A> 
@@ -95,9 +113,27 @@ RE: topics:
 ( {{- display_datetime(post.published) -}} )
 </dt>
 <dd>
-<div class="list-comments">{{ post.get_text() }}
+<div class="list-comments">
+<input type="checkbox" id="disctoggle {{- i -}}"/>Show discussion.<BR>
+<div id="disctext {{- i -}}" style="display: none">
+{{ post.get_text() }}
+{% for reply in timesort(post.get_replies(), reverse=False) %}
+<li><A HREF="{{- reply.get_author_url() -}}">
+{{ reply.get_author_name() }}
+</A> replies ( {{- display_datetime(reply.published) -}} ):
+{{ reply.get_text() }}
+</li>
+{% endfor %}
+</div>
 </div>
 </dd>
+
+<script>
+$( "#disctoggle {{- i -}}" ).click(function() {
+  $( "#disctext {{- i -}}" ).toggle();
+});
+</script>
+{% endif %}
 {% endfor %}
 </dl>
 {% endif %}

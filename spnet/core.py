@@ -5,26 +5,17 @@ from datetime import datetime
 import errors
 import thread
 import latex
+import time
 
 
 ##########################################################
 
 # fetch functions for use with LinkDescriptor 
 
-def fetch_recs(person):
-    'return list of Recommendation objects for specified person'
-    coll = Recommendation.coll
-    results = coll.find({'recommendations.author':person._id},
-                        {'recommendations':1})
-    l = []
-    for r in results:
-        paperID = r['_id']
-        for recDict in r['recommendations']:
-            if recDict['author'] == person._id:
-                l.append(Recommendation(docData=recDict, parent=paperID,
-                                        insertNew=False))
-                break
-    return l
+def fetch_recs(obj):
+    'get subset of posts that are recommendations'
+    return filter(lambda p:p.is_rec(), obj.posts)
+
 
 def merge_sigs(person, attr, sigLinks):
     'postprocess list of SIGLinks to handle mergeIn requests'
@@ -44,6 +35,7 @@ def merge_sigs(person, attr, sigLinks):
 # forward declarations to avoid circular ref problem
 fetch_paper = FetchObj(None)
 fetch_person = FetchObj(None)
+fetch_post = FetchObj(None)
 fetch_sig = FetchObj(None)
 fetch_sigs = FetchList(None)
 fetch_people = FetchList(None)
@@ -56,8 +48,7 @@ fetch_subscribers = FetchQuery(None, lambda person:
                                {'subscriptions.author':person._id})
 fetch_sig_members = FetchQuery(None, lambda sig: {'sigs.sig':sig._id})
 fetch_sig_papers = FetchQuery(None, lambda sig: {'sigs':sig._id})
-fetch_sig_recs = FetchQuery(None, lambda sig:
-                            {'recommendations.sigs':sig._id})
+fetch_post_citations = FetchQuery(None, lambda post: {'citations.post':post.id})
 fetch_sig_posts = FetchQuery(None, lambda sig:
                             {'posts.sigs':sig._id})
 fetch_sig_interests = FetchQuery(None, lambda sig:
@@ -94,57 +85,96 @@ class AuthorInfo(object):
         else:
             return self.text
 
-def get_replies(self):
-    'used by both Post and Recommendation to find replies'
+def report_topics(self, d, attr='sigs', method='insert', personAttr='author'):
+    'wrap insert() or update() to insert topics into author Person record'
     try:
-        docID = self.id
-    except AttributeError:
-        return
-    for r in getattr(self.parent, 'replies', ()):
-        if r._dbDocDict['replyTo'] == docID:
-            yield r
-
-class Recommendation(ArrayDocument, AuthorInfo):
-    _dbfield = 'recommendations.author' # dot.name for updating
-    useObjectId = False # input data will supply _id
-    _timeStampField = 'published' # auto-add timestamp if missing
-    # attrs that will only be fetched if accessed by user
-    parent = LinkDescriptor('parent', fetch_parent_paper, noData=True)
-    author = LinkDescriptor('author', fetch_person)
-    forwards = LinkDescriptor('forwards', fetch_people)
-    sigs = LinkDescriptor('sigs', fetch_sigs, missingData=())
-
-    get_replies = get_replies
-    def get_local_url(self):
-        return '/papers/' + str(self._parent_link) + '/recs/' + \
-               str(self._dbDocDict['author'])
+        topics = d[attr]
+    except KeyError:
+        pass
+    else:
+        try:
+            personID = d[personAttr]
+        except KeyError:
+            personID = self._dbDocDict[personAttr]
+        Person.coll.update({'_id': personID},
+                           {'$addToSet': {'topics': {'$each':topics}}})
+    return getattr(super(self.__class__, self), method)(d)
 
 class Post(UniqueArrayDocument, AuthorInfo):
     _dbfield = 'posts.id' # dot.name for updating
     _timeStampField = 'published' # auto-add timestamp if missing
+    _parent_url = '/papers/%s' # link for full paper record
     # attrs that will only be fetched if accessed by getattr
     parent = LinkDescriptor('parent', fetch_parent_paper, noData=True)
+    citations = LinkDescriptor('citations', fetch_post_citations, noData=True)
     author = LinkDescriptor('author', fetch_person)
     sigs = LinkDescriptor('sigs', fetch_sigs, missingData=())
-    get_replies = get_replies
+    def get_replies(self):
+        'get all replies for this post'
+        try:
+            docID = self.id
+        except AttributeError:
+            return
+        for r in getattr(self.parent, 'replies', ()):
+            if r._dbDocDict['replyTo'] == docID:
+                yield r
+    insert = lambda self,d:report_topics(self, d)
+    update = lambda self,d:report_topics(self, d, method='update')
+    def get_topics(self):
+        l = []
+        for topicID in self._dbDocDict.get('sigs', ()):
+            l.append(SIG(docData=dict(_id=topicID, name='#' + topicID), 
+                         insertNew=False))
+        return l
+    def delete(self):
+        for c in self.citations:
+            c.delete()
+        UniqueArrayDocument.delete(self)
+    def get_local_url(self):
+        return '/posts/' + self.id
+    def is_rec(self):
+        return getattr(self, 'citationType', 'discuss') \
+            in ('mustread', 'recommend')
+    def add_citations(self, papers, citationType='discuss'):
+        'save paper citations to db'
+        if not getattr(self, 'hasCitations', False):
+            self.update(dict(hasCitations=True))
+        l = []
+        for paper in papers:
+            d = dict(post=self.id, authorName=self.author.name,
+                     title=self.title, published=self.published,
+                     citationType=citationType)
+            l.append(Citation(docData=d, parent=paper))
+        return l
 
-def fetch_post_or_rec(obj, fetchID):
-    for post in obj.parent.posts:
+
+def fetch_reply_post(obj, fetchID):
+    for post in getattr(obj.parent, 'posts', ()):
         if getattr(post, 'id', ('uNmAtChAbLe',)) == fetchID:
             return post
-    for rec in obj.parent.recommendations:
-        if getattr(rec, 'id', ('uNmAtChAbLe',)) == fetchID:
-            return rec
-    raise KeyError('No post or rec found with id=' + str(fetchID))
+    raise KeyError('No post found with id=' + str(fetchID))
 
 
 class Reply(UniqueArrayDocument, AuthorInfo):
     _dbfield = 'replies.id' # dot.name for updating
     _timeStampField = 'published' # auto-add timestamp if missing
+    _parent_url = '/papers/%s' # link for full paper record
     # attrs that will only be fetched if accessed by getattr
     parent = LinkDescriptor('parent', fetch_parent_paper, noData=True)
     author = LinkDescriptor('author', fetch_person)
-    replyTo = LinkDescriptor('replyTo', fetch_post_or_rec)
+    replyTo = LinkDescriptor('replyTo', fetch_reply_post)
+    def get_local_url(self):
+        return self.get_post_url() + '#' + self.id
+    def get_post_url(self):
+        return '/posts/' + self._dbDocDict['replyTo']
+
+class Citation(ArrayDocument):
+    _dbfield = 'citations.post' # dot.name for updating
+    _timeStampField = 'published' # auto-add timestamp if missing
+    # attrs that will only be fetched if accessed by getattr
+    parent = LinkDescriptor('parent', fetch_parent_paper, noData=True)
+    post = LinkDescriptor('post', fetch_post)
+
 
 class PaperInterest(ArrayDocument):
     _dbfield = 'interests.author' # dot.name for updating
@@ -152,6 +182,8 @@ class PaperInterest(ArrayDocument):
     parent = LinkDescriptor('parent', fetch_parent_paper, noData=True)
     author = LinkDescriptor('author', fetch_person)
     topics = LinkDescriptor('topics', fetch_sigs, missingData=())
+    insert = lambda self,d:report_topics(self, d, 'topics')
+    update = lambda self,d:report_topics(self, d, 'topics', method='update')
     def add_topic(self, topic):
         topics = set(self._dbDocDict.get('topics', ()))
         topics.add(topic)
@@ -196,7 +228,7 @@ class SIG(Document):
     # attrs that will only be fetched if accessed by user
     members = LinkDescriptor('members', fetch_sig_members, noData=True)
     papers = LinkDescriptor('papers', fetch_sig_papers, noData=True)
-    recommendations  = LinkDescriptor('recommendations', fetch_sig_recs,
+    recommendations  = LinkDescriptor('recommendations', fetch_recs,
                                       noData=True)
     posts  = LinkDescriptor('posts', fetch_sig_posts, noData=True)
     interests  = LinkDescriptor('interests', fetch_sig_interests, noData=True)
@@ -231,17 +263,10 @@ class SIG(Document):
         return '/topics/' + str(self._id)
 
 
-# current unused
-class SIGLink(ArrayDocument):
-    _dbfield = 'sigs.sig' # dot.name for updating
-    sig = LinkDescriptor('sig', fetch_sig)
-    parent = LinkDescriptor('parent', fetch_parent_person, noData=True)
 
-    def _add_merge(self, other):
-        try:
-            self._mergeLinks.append(other)
-        except AttributeError:
-            self._mergeLinks = [other]
+class TopicOptions(ArrayDocument):
+    _dbfield = 'topicOptions.topic' # dot.name for updating
+    topic = LinkDescriptor('topic', fetch_sig)
 
 class GplusPersonData(EmbeddedDocument):
     'store Google+ data for a user as subdocument of Person'
@@ -365,7 +390,7 @@ class Person(Document):
         email=SaveAttrList(EmailAddress, insertNew=False),
         gplus=SaveAttr(GplusPersonData, insertNew=False),
         subscriptions = SaveAttrList(Subscription, insertNew=False),
-        ## sigs=SaveAttrList(SIGLink, postprocess=merge_sigs, insertNew=False),
+        topicOptions = SaveAttrList(TopicOptions, insertNew=False),
         )
 
     def authenticate(self, password):
@@ -398,10 +423,85 @@ class Person(Document):
                 personID = p['_id']
                 Subscription((personID, self._id), docData=docData,
                              parent=personID, insertNew='findOrInsert')
+    def get_topics(self, order = dict(hide=0, low=1, medium=2, high=3)):
+        topicOptions = {}
+        for tOpt in getattr(self, 'topicOptions', ()):
+            topicOptions[tOpt._dbDocDict['topic']] = tOpt
+        l = []
+        for topic in getattr(self, 'topics', ()):
+            try:
+                tOpt = topicOptions[topic]
+                l.append((topic, getattr(tOpt, 'fromMySubs', 'medium'),
+                         getattr(tOpt, 'fromOthers', 'low')))
+            except KeyError:
+                l.append((topic, 'medium', 'low'))
+        l.sort(lambda x,y:cmp(order.get(x[1], -1), order.get(y[1], -1)), 
+               reverse=True)
+        return l
+    def get_deliveries(self, order = dict(hide=0, low=1, medium=2, high=3)):
+        topics = {}
+        for topic, fromMySubs, fromOthers in self.get_topics():
+            fromMySubs = order[fromMySubs]
+            if fromOthers == 'same':
+                fromOthers = fromMySubs
+            else:
+                fromOthers = order[fromOthers]
+            if fromMySubs > 0:
+                topics[topic] = (fromMySubs, fromOthers)
+        subs = {}
+        for s in getattr(self, 'subscriptions', ()):
+            subs[s._get_id()] = s
+        priority = 0
+        l = []
+        for r in getattr(self, 'received', ()):
+            try:
+                sub = subs[r['from']]
+                i = 0
+            except KeyError:
+                sub = None
+                i = 1
+            for topic in r['topics']:
+                try:
+                    priority = max(priority, topics[topic][i])
+                except KeyError:
+                    pass
+            if sub:
+                if priority > 0:
+                    level = getattr(sub, 'onMyTopics', 'topic')
+                else:
+                    level = getattr(sub, 'onOthers', 'low')
+                if level != 'topic':
+                    priority = max(priority, order[level])
+            if priority > 0:
+                r['priority'] = priority
+                l.append(r)
+        l.sort(lambda x,y:cmp((x['priority'],x['published']), 
+                              (y['priority'],y['published'])), reverse=True)
+        return l
+    def force_reload(self, state=None, delay=300):
+        if state is not None:
+            self._forceReload = state
+        else:
+            try: # check if timer has expired
+                if time.time() > self._reloadTime:
+                    return True # force reload
+            except AttributeError: # start the timer
+                self._reloadTime = time.time() + delay
+        return getattr(self, '_forceReload', False)
+                
+                    
 
 class ArxivPaperData(EmbeddedDocument):
     'store arxiv data for a paper as subdocument of Paper'
     _dbfield = 'arxiv.id'
+    def __init__(self, fetchID=None, docData=None, parent=None,
+                 insertNew=True):
+        if fetchID:
+            s = fetchID.lower()
+            i = s.rfind('v')
+            if i > 0 and fetchID[i + 1:].isdigit():
+                fetchID = fetchID[:i] # remove version suffix
+        EmbeddedDocument.__init__(self, fetchID, docData, parent, insertNew)
     def _query_external(self, arxivID):
         'obtain arxiv data from arxiv.org'
         import arxiv
@@ -537,7 +637,6 @@ class DoiPaperData(EmbeddedDocument):
             return 'Click <A HREF="%s">here</A> for the Abstract' \
                    % self.get_downloader_url()
 
-
 class Paper(Document):
     '''interface to a specific paper '''
     # attrs that will only be fetched if accessed by user
@@ -547,11 +646,13 @@ class Paper(Document):
     issues = LinkDescriptor('issues', fetch_issues,
                             noData=True, missingData=())
     sigs = LinkDescriptor('sigs', fetch_sigs, missingData=())
+    recommendations = LinkDescriptor('recommendations', fetch_recs,
+                                     noData=True)
 
     # custom attr constructors
     _attrHandler = dict(
-        recommendations=SaveAttrList(Recommendation, insertNew=False),
         posts=SaveAttrList(Post, insertNew=False),
+        citations=SaveAttrList(Citation, insertNew=False),
         replies=SaveAttrList(Reply, insertNew=False),
         interests=SaveAttrList(PaperInterest, insertNew=False),
         arxiv=SaveAttr(ArxivPaperData, insertNew=False),
@@ -579,8 +680,15 @@ class Paper(Document):
         return d
     def get_local_url(self):
         return '/paper/' + str(self._id)
-                
-
+    def get_all_posts(self, isRec=False):
+        l = getattr(self, 'posts', [])
+        if isRec is not None:
+            l = filter(lambda p:p.is_rec() == isRec, l)
+        for c in getattr(self, 'citations', ()):
+            if isRec is None or (c.citationType in ('mustread', 'recommend')) \
+                    == isRec:
+                l.append(c.post)
+        return l
 
 
 class Tag(Document):
@@ -601,6 +709,7 @@ fetch_parent_issue.klass = Issue
 fetch_sig.klass = SIG
 fetch_sigs.klass = SIG
 fetch_person.klass = Person
+fetch_post.klass = Post
 fetch_papers.klass = Paper
 fetch_people.klass = Person
 fetch_parent_person.klass = Person
@@ -609,7 +718,7 @@ fetch_author_papers.klass = Paper
 fetch_subscribers.klass = Person
 fetch_sig_members.klass = Person
 fetch_sig_papers.klass = Paper
-fetch_sig_recs.klass = Recommendation
+fetch_post_citations.klass = Citation
 fetch_sig_posts.klass = Post
 fetch_sig_interests.klass = PaperInterest
 fetch_issues.klass = Issue

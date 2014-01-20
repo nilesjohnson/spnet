@@ -3,10 +3,22 @@
 <head>
 <link rel="stylesheet" type="text/css" media="screen" href="/css/arXiv.css" />
 <title> {{- person.name -}} </title>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js">
+</script>
 
 <script type="text/javascript" src="https://c328740.ssl.cf1.rackcdn.com/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML,Safe">
 </script>
 
+<script type="text/javascript">
+function setPriority(subcoll, topicID, field, state)
+{
+  $.post("/people/ {{- person._id -}}" + subcoll + topicID,
+  {
+    field:field,
+    state:state
+  });
+}
+</script>
 </head>
 
 <body>
@@ -37,6 +49,9 @@ People &gt;
 <option value="PMID">Pubmed ID</option>
 <option value="pubmed">Pubmed</option>
 <option value="ncbipubmed">Pubmed (ncbi)</option>
+<option value="spnetPerson">People on spnet</option>
+<option value="topic">Topics on spnet</option>
+<option value="comment">Comments on spnet</option>
 </select>
 <input type="submit" value="Go!" /><br />
 </form>
@@ -48,8 +63,24 @@ People &gt;
 </h1>
 
 {% if hasattr(person, 'gplus') %}
+{% if user == person %}
+<a href=" {{- person.gplus['url'] -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;" title="Click here to view your settings on Google+">
+<img src=" {{- person.gplus['image']['url'] -}} "></a>
+<button
+  class="g-interactivepost"
+  data-contenturl=" {{- user.get_spnet_url() -}} "
+  data-clientid=" {{- gplusClientID -}} "
+  data-cookiepolicy="single_host_origin"
+  data-prefilltext="I've subscribed to get your recommendations and comments on research papers via SelectedPapers.net.  To use this, just include hashtags in your posts (e.g. #spnetwork arXiv:1301.4176, for details see http://docs.selectedpapers.net/hashtags.html) or simply have SelectedPapers.net insert the appropriate hashtags in your posts for you.  It works automatically with your Google+ sign-in.  You can also use this to find and filter paper recommendations from others who share your interests."
+  data-calltoactionlabel="VIEW"
+  data-calltoactionurl=" {{- user.get_spnet_url() -}} "
+  title="Click here to invite your contacts on Google+ to share their comments and recommendations on papers with you via SelectedPapers.net">
+  Invite your contacts
+</button>
+{% else %}
 <a href=" {{- person.gplus['url'] -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;" title="Click here to view or subscribe to this person on Google+">
 <img src=" {{- person.gplus['image']['url'] -}} ">Subscribe</a>
+{% endif %}
 <form id="updater" method="GET" action=" {{- person.get_local_url() -}} ">
 <input type="hidden" name="getUpdates" value="1"/>
 Check
@@ -66,22 +97,58 @@ title="retrieve latest posts and recommendations from this person via Google+" /
 </form>
 
 {% if user == person %}
-<h3>Invitations</h3>
-Would you like to invite your contacts on Google+ to share
-their comments and recommendations on papers with you via SelectedPapers.net?
-(This will simply bring up a Google+ window where you can send
-them an invitation post).<br>
-<button
-  class="g-interactivepost"
-  data-contenturl=" {{- user.get_spnet_url() -}} "
-  data-clientid=" {{- gplusClientID -}} "
-  data-cookiepolicy="single_host_origin"
-  data-prefilltext="I've subscribed to get your recommendations and comments on research papers via SelectedPapers.net.  To use this, just include hashtags in your posts (e.g. #spnetwork arXiv:1301.4176, for details see http://docs.selectedpapers.net/tags.html) or simply have SelectedPapers.net insert the appropriate hashtags in your posts for you.  It works automatically with your Google+ sign-in.  You can also use this to find and filter paper recommendations from others who share your interests."
-  data-calltoactionlabel="VIEW"
-  data-calltoactionurl=" {{- user.get_spnet_url() -}} "
-  title="Click to recommend this paper on Google+">
-  Post Invitation
-</button>
+<h3>Your Subscription Settings</h3>
+The paper recommendations shown for you when you login
+provide an intersection of people and ideas.
+SelectedPapers.net lets you filter paper recommendations based on both 
+what they're about (<B>topics</B> that interest you)
+and who they're from (<B>people</B> whose judgment you trust).
+It lets you combine these filters in flexible ways. 
+For example, for a very general topic (only some of whose posts are
+of interest to you), you could filter it to only show recommendations
+from people you've subscribed to (set its <B>From Others -> Don't Show</B>).
+Similarly, if you're subscribed to someone who also writes on topics
+that don't excite you, filter those out (set that person's 
+<B>On Other Topics -> Don't Show</B>).  
+Priority settings determine whether a recommendation is
+shown higher or lower in the list.
+<B>Your Topics</B> include topics you've posted on or tagged as interesting.
+<BR/>
+<TABLE BORDER=1>
+<TR><TH>Your Topics</TH><TH>From Your Subscriptions</TH><TH>From Others</TH></TR>
+{% for i,t in enumerate(person.get_topics()) %}
+<TR><TD><A HREF="/topics/{{- t[0] -}}">
+{{ '#' + t[0] }}
+</A></TD><TD>
+{{ Selection('mine%d' % i, [('high', 'High Priority'), ('medium', 'Medium Priority'), ('low', 'Lower Priority'), ('hide', "Don't Show"), ], selected=t[1], onchange="setPriority('/topics/', '%s', 'fromMySubs', this.value)" % t[0]) }}
+</TD><TD>
+{{ Selection('other%d' % i, [('same', 'Same Priority'), ('high', 'High Priority'), ('medium', 'Medium Priority'), ('low', 'Lower Priority'), ('hide', "Don't Show"), ], selected=t[2], onchange="setPriority('/topics/', '%s', 'fromOthers', this.value)" % t[0]) }}
+</TD></TR>
+{% endfor %}
+</TABLE>
+<BR/>
+<TABLE BORDER=1>
+<TR><TH>Your Subscriptions</TH><TH>On Your Topics</TH><TH>On Other Topics</TH></TR>
+{% for i,sub in enumerate(person.subscriptions) %}
+<TR><TD><A HREF="{{- sub.author.get_value('local_url') -}}">
+{{ sub.author.name }}
+</A></TD><TD>
+{{ Selection('sub%d' % i, [('topic', 'Topic Priority'), ('high', 'High Priority'), ('medium', 'Medium Priority'), ('low', 'Lower Priority'), ('hide', "Don't Show"), ], selected=getattr(sub, 'onMyTopics', 'topic'), onchange="setPriority('/subscriptions/', '%s', 'onMyTopics', this.value)" % sub.author._id) }}
+</TD><TD>
+{{ Selection('subother%d' % i, [('high', 'High Priority'), ('medium', 'Medium Priority'), ('low', 'Lower Priority'), ('hide', "Don't Show"), ], selected=getattr(sub, 'onOthers', 'low'), onchange="setPriority('/subscriptions/', '%s', 'onOthers', this.value)" % sub.author._id) }}
+</TD></TR>
+{% endfor %}
+</TABLE>
+<BR/>
+Your subscriptions above are based on your Google+ Circles
+(but only include people who have used or posted to selectedpapers.net).
+Note: you can add or remove people from your Google+ Circles on 
+<A HREF="https://plus.google.com/{{- user.gplus.id -}}/about"
+title="Edit your settings on Google+">
+your Google+ settings</A> (in the usual way).
+You can also invite your contacts on Google+ to share
+their comments and recommendations on papers with you via SelectedPapers.net,
+by clicking the <B>Invite your contacts</B> button at the top.
 
 {% endif %}
 {% endif %}
@@ -91,12 +158,17 @@ them an invitation post).<br>
 <h3>Recommendations</h3>
 <dl>
 {% for i,rec in enumerate(timesort(person.recommendations)) %}
-<dt>[ 
-<A HREF="{{- rec.get_local_url() -}}">
-{{- i + 1 -}} </A> ]
-<A HREF="{{- rec.author.get_local_url() -}}">
-{{ rec.author.name }}
-</A>: <B>{{ rec.title }}</B> ( {{- display_datetime(rec.published) -}} )
+<dt>[ {{- i + 1 -}} ]
+<B><A HREF="{{- rec.get_local_url() -}}">Recommendation</A> for</B>
+<A HREF="{{- rec.parent.get_value('local_url') -}}"> 
+{{ rec.parent.title }} </A> 
+{% if rec.sigs %}
+RE: topics:
+{% for topic in rec.sigs %}
+<A HREF="{{- topic.get_local_url() -}}"> {{ topic.name }} </A>
+{% endfor %}
+{% endif %}
+( {{- display_datetime(rec.published) -}} )
 <a href="https://plus.google.com/share? {{- urlencode(dict(url=rec.get_spnet_url())) -}}" onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=600');return false;">
 <img src="https://www.gstatic.com/images/icons/gplus-32.png" alt="Share on Google+" title="Share this recommendation on Google+"/></a>
 {% if hasattr(rec, 'url') %}
@@ -105,11 +177,9 @@ them an invitation post).<br>
 {% endif %}
 </dt>
 <dd>
-<span class="list-identifier">Recommended:
-<A HREF="{{- rec.parent.get_value('local_url') -}}"> 
-{{ rec.parent.title }} </A>
-</span>
 <div class="list-comments">
+<input type="checkbox" id="rectoggle {{- i -}}"/>Show discussion.<BR>
+<div id="rectext {{- i -}}" style="display: none">
 {{ rec.get_text() }}
 {% for reply in timesort(rec.get_replies(), reverse=False) %}
 <li><A HREF="{{- reply.author.get_local_url() -}}">
@@ -119,7 +189,14 @@ them an invitation post).<br>
 </li>
 {% endfor %}
 </div>
+</div>
 </dd>
+
+<script>
+$( "#rectoggle {{- i -}}" ).click(function() {
+  $( "#rectext {{- i -}}" ).toggle();
+});
+</script>
 {% endfor %}
 </dl>
 {% endif %}
@@ -142,12 +219,16 @@ them an invitation post).<br>
 {% endif %}
 
 
-{% if person.posts %}
+{% if len(person.posts) > len(person.recommendations) %}
+{% set i = 0 %}
 <h3>Discussion</h3>
 
 <dl>
-{% for i,post in enumerate(timesort(person.posts)) %}
-<dt>[ {{- i + 1 -}} ] Comment on
+{% for post in timesort(person.posts) %}
+{% if not post.is_rec() %}
+{% set i = i + 1 %}
+<dt>[ {{- i -}} ]
+<B><A HREF="{{- post.get_local_url() -}}">Comment</A> on</B>
 <A HREF="{{- post.parent.get_value('local_url') -}}">
 {{ post.parent.title }}
 </a> 
@@ -159,7 +240,10 @@ RE: topics:
 {% endif %}
 ( {{- display_datetime(post.published) -}} )</dt>
 <dd>
-<div class="list-comments">{{ post.get_text() }}
+<div class="list-comments">
+<input type="checkbox" id="disctoggle {{- i -}}"/>Show discussion.<BR>
+<div id="disctext {{- i -}}" style="display: none">
+{{ post.get_text() }}
 {% if hasattr(post, 'url') %}
 <a href=" {{- post.url -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;">
 <img src="/images/reply.jpg" title="Click here to reply to this comment on Google+"></a>
@@ -172,7 +256,15 @@ RE: topics:
 </li>
 {% endfor %}
 </div>
+</div>
 </dd>
+
+<script>
+$( "#disctoggle {{- i -}}" ).click(function() {
+  $( "#disctext {{- i -}}" ).toggle();
+});
+</script>
+{% endif %}
 {% endfor %}
 </dl>
 {% endif %}

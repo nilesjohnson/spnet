@@ -5,7 +5,7 @@ import gplus
 import errors
 from bson import ObjectId
 import json
-import cherrypy
+from sessioninfo import get_session
 from urllib import urlencode
 
 
@@ -14,25 +14,27 @@ class ArrayDocCollection(rest.Collection):
         return self.klass.find_obj_in_parent(parents.values()[0], docID)
 
 class InterestCollection(ArrayDocCollection):
+    '/papers/PAPER/likes/PERSON REST interface for AJAX calls'
+    def check_permission(self, method, personID, *args, **kwargs):
+        if method == 'GET': # permitted
+            return False
+        try:
+            if personID != get_session()['person']._id:
+                return view.report_error('TRAP set_interest by different user!', 403,
+                                      "You cannot change someone else's settings!")
+        except (KeyError,AttributeError):
+            return view.report_error('TRAP set_interest, not logged in!', 401,
+                                     'You must log in to access this interface')
     def _POST(self, personID, topic, state, parents, topic2=''):
         'add or remove topic from PaperInterest depending on state'
         topic = topic or topic2 # use whichever is non-empty
         topic = core.SIG.standardize_id(topic) # must follow hashtag rules
         personID = ObjectId(personID)
-        try:
-            if personID != cherrypy.session['person']._id:
-                s = view.report_error('TRAP set_interest by different user!', 403,
-                                      "You cannot change someone else's settings!")
-                return rest.Response(s)
-        except KeyError:
-            s = view.report_error('TRAP set_interest, not logged in!', 401,
-                                  'You must log in to access this interface')
-            return rest.Response(s)
         state = int(state)
         if state: # make sure topic exists
             sig = core.SIG.find_or_insert(topic)
         interest = self.set_interest(personID, topic, state, parents)
-        cherrypy.session['person'] = core.Person(personID) # refresh user
+        get_session()['person'].force_reload(True) # refresh user
         return interest
     def set_interest(self, personID, topic, state, parents):
         try:
@@ -86,6 +88,12 @@ class PaperCollection(rest.Collection):
         elif searchType == 'DOI':
             dpd = core.DoiPaperData(DOI=searchString, insertNew='findOrInsert')
             return rest.Redirect('/shortDOI/%s' % dpd.id)
+        elif searchType == 'spnetPerson':
+            return rest.Redirect('/people?' + urlencode(dict(searchString=searchString)))
+        elif searchType == 'topic':
+            return rest.Redirect('/topics?' + urlencode(dict(searchString=searchString)))
+        elif searchType == 'comment':
+            return rest.Redirect('/posts?' + urlencode(dict(searchAll=searchString)))
         else:
             raise KeyError('unknown searchType ' + searchType)
                                  
@@ -94,7 +102,7 @@ class PaperCollection(rest.Collection):
 class ParentCollection(rest.Collection):
     def _GET(self, docID, parents=None):
         try: # use cached query results if present
-            queryResults = cherrypy.session['queryResults']
+            queryResults = get_session()['queryResults']
         except (AttributeError, KeyError):
             pass
         else:
@@ -128,7 +136,7 @@ class ArxivCollection(ParentCollection):
         ipage = int(ipage)
         block_size = int(block_size)
         if session is None:
-            session = cherrypy.session
+            session = get_session()
         if searchID: # just get this ID
             return ParentCollection._search(self, searchID)
         if not searchString:
@@ -155,7 +163,7 @@ class ArxivCollection(ParentCollection):
 
 class PubmedCollection(ParentCollection):
     def _search(self, searchString=None, searchID=None, ipage=0,
-                block_size=20, session=None):
+                block_size=20):
         import pubmed
         if not searchString:
             s = view.report_error('empty searchString', 400,
@@ -164,7 +172,7 @@ class PubmedCollection(ParentCollection):
         ipage = int(ipage)
         block_size = int(block_size)
         try: # get from existing query results
-            queryResults = cherrypy.session['queryResults']
+            queryResults = get_session()['queryResults']
             if queryResults.get_page(ipage, self.collectionArgs['uri'],
                                      searchString=searchString):
                 return queryResults
@@ -188,14 +196,18 @@ paste it in the search box on this page.'''
                                   % urlencode(dict(searchType='ncbipubmed',
                                                    searchString=searchString)))
             return rest.Response(s)
-        cherrypy.session['queryResults'] = queryResults # keep for this user
+        get_session()['queryResults'] = queryResults # keep for this user
         return queryResults
         
 
 
 class PersonCollection(rest.Collection):
     def _GET(self, docID, getUpdates=False, timeframe=None, **kwargs):
-        person = rest.Collection._GET(self, docID, **kwargs)
+        user = get_session().get('person', None)
+        if user and docID == user._id:
+            person = user # use cached Person object so we can mark it for refresh
+        else:
+            person = rest.Collection._GET(self, docID, **kwargs)
         if getUpdates:
             try:
                 gpd = person.gplus
@@ -209,8 +221,31 @@ class PersonCollection(rest.Collection):
                 if l: # need to update our object representation to see them
                     person = rest.Collection._GET(self, docID, **kwargs)
         return person
+    def _search(self, searchString):
+        if not searchString:
+            raise KeyError('empty query')
+        searchString = '(?i)' + searchString # default: case-insensitive
+        l = list(self.klass.find_obj({'name': {'$regex': searchString}}))
+        if not l:
+            raise KeyError('no matches')
+        return l
 
-class ReadingList(rest.Collection):
+class PersonAuthBase(rest.Collection):
+    'only allow logged-in user to POST his own settings'
+    def check_permission(self, method, *args, **kwargs):
+        if method == 'GET': # permitted
+            return False
+        user = get_session().get('person', None)
+        if not user:
+            return view.report_error('TRAP set_interest, not logged in!', 401,
+                                     'You must log in to access this interface')
+        person = kwargs['parents'].values()[0]
+        if person != user:
+            return view.report_error('TRAP set_interest by different user!', 403,
+                                     "You cannot change someone else's settings!")
+
+class ReadingList(PersonAuthBase):
+    '/people/PERSON/reading/PAPER REST interface for AJAX calls'
     def _POST(self, paperID, state, parents):
         person = parents.values()[0]
         paperID = ObjectId(paperID)
@@ -224,10 +259,73 @@ class ReadingList(rest.Collection):
         else:
             person.array_del('readingList', paperID)
             result = -1
-        cherrypy.session['person'] = core.Person(person._id) # refresh user
+        person.force_reload(True) # refresh user
         return result
     def post_json(self, status, **kwargs):
         return json.dumps(dict(status=status))
+
+class PersonTopics(PersonAuthBase):
+    '/people/PERSON/topics/TOPIC REST interface for AJAX calls'
+    def _POST(self, topic, field, state, parents):
+        person = parents.values()[0]
+        try:
+            tOpt = core.TopicOptions.find_obj_in_parent(person, topic)
+        except KeyError:
+            tOpt = core.TopicOptions(docData={'topic':topic, field:state}, 
+                                     parent=person)
+        else:
+            tOpt.update({field:state})
+        person.force_reload(True) # refresh user
+        return 1
+    def post_json(self, status, **kwargs):
+        return json.dumps(dict(status=status))
+
+class PersonSubscriptions(PersonAuthBase):
+    '/people/PERSON/subscriptions/PERSON REST interface for AJAX calls'
+    def _POST(self, author, field, state, parents):
+        person = parents.values()[0]
+        author = ObjectId(author)
+        try:
+            sub = core.Subscription.find_obj_in_parent(person, author)
+        except KeyError:
+            sub = core.Subscription(docData={'author':author, field:state}, 
+                                     parent=person)
+        else:
+            sub.update({field:state})
+        person.force_reload(True) # refresh user
+        return 1
+    def post_json(self, status, **kwargs):
+        return json.dumps(dict(status=status))
+
+class TopicCollection(rest.Collection):
+    def _search(self, searchString=None, stem=None):
+        if stem:
+            return self.stem_search(stem)
+        if not searchString:
+            raise KeyError('empty query')
+        searchString = '(?i)' + searchString # default: case-insensitive
+        l = list(self.klass.find_obj({'_id': {'$regex': searchString}}))
+        if not l:
+            raise KeyError('no matches')
+        return l
+    def stem_search(self, stem): # return list of topics beginning with stem
+        if not stem:
+            return []
+        return list(self.klass.find({'_id': {'$regex': '^' + stem}}))
+    def search_json(self, data, **kwargs):
+        return json.dumps(data)
+
+class PostCollection(rest.Collection):
+    def _search(self, searchAll=None):
+        if not searchAll:
+            raise KeyError('empty query')
+        searchAll = '(?i)' + searchAll # default: case-insensitive
+        l = list(core.Post.find_obj({'posts.text': {'$regex': searchAll}}))
+        l += list(core.Reply.find_obj({'replies.text': {'$regex': searchAll}}))
+        if not l:
+            raise KeyError('no matches')
+        return l
+
     
 def get_collections(templateDir='_templates'):
     gplusClientID = gplus.get_keys()['client_id'] # most templates need this
@@ -251,10 +349,10 @@ def get_collections(templateDir='_templates'):
                                     gplusClientID=gplusClientID,
                              collectionArgs=dict(uri='/pubmed'))
 
-    recs = ArrayDocCollection('rec', core.Recommendation,
-                              templateEnv, templateDir,
-                              gplusClientID=gplusClientID)
-    papers.recs = recs # bind as subcollection
+    ## recs = ArrayDocCollection('rec', core.Recommendation,
+    ##                           templateEnv, templateDir,
+    ##                           gplusClientID=gplusClientID)
+    ## papers.recs = recs # bind as subcollection
 
     likes = InterestCollection('like', core.PaperInterest, templateEnv,
                                templateDir, gplusClientID=gplusClientID)
@@ -265,7 +363,19 @@ def get_collections(templateDir='_templates'):
     readingList = ReadingList('reading', core.Paper, templateEnv, templateDir,
                               gplusClientID=gplusClientID)
     people.reading = readingList
-    topics = rest.Collection('topic', core.SIG, templateEnv, templateDir,
+    personTopics = PersonTopics('topics', core.SIG, templateEnv, templateDir,
+                                gplusClientID=gplusClientID)
+    people.topics = personTopics
+    personSubs = PersonSubscriptions('subscriptions', core.Subscription, 
+                                     templateEnv, templateDir,
+                                     gplusClientID=gplusClientID)
+    people.subscriptions = personSubs
+    topics = TopicCollection('topic', core.SIG, templateEnv, templateDir,
+                             gplusClientID=gplusClientID)
+
+    posts = PostCollection('post', core.Post, templateEnv, templateDir,
+                           gplusClientID=gplusClientID)
+    replies = PostCollection('reply', core.Reply, templateEnv, templateDir,
                              gplusClientID=gplusClientID)
 
     # load homepage template
@@ -279,4 +389,6 @@ def get_collections(templateDir='_templates'):
                 pubmed=pubmedPapers,
                 people=people,
                 topics=topics,
+                posts=posts,
+                replies=replies,
                 index=homePage)

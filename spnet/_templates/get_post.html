@@ -2,7 +2,7 @@
 <html>
 <head>
 <link rel="stylesheet" type="text/css" media="screen" href="/css/arXiv.css" />
-<title> {{- rec.title -}} </title>
+<title> {{- post.title -}} </title>
 
 <script type="text/javascript" src="https://c328740.ssl.cf1.rackcdn.com/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML,Safe">
 </script>
@@ -13,9 +13,7 @@
 
 <div id="header">
 <h1><img src="/favicon.ico"/><a href="/">SelectedPapers.net</a>
-{% for topic in rec.sigs %}
-<A HREF="{{- topic.get_local_url() -}}"> | {{ topic.name }}  </A>
-{% endfor %}
+| Posts
 </h1>
 <form id="search" method="GET" action="/papers">
 <div class="search-for">Search or Article-id</div>
@@ -45,30 +43,51 @@
 
 <div id="content">
 <h1 class="title">
-{{ rec.title }}
+{{ post.title }}
 </h1>
 <div class="authors">
-{% if hasattr(rec.author, 'gplus') %}
-<a href=" {{- rec.author.gplus['url'] -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;" title="Click here to view or subscribe to this person on Google+">
-<img src=" {{- rec.author.gplus['image']['url'] -}} "></a>
+{% if hasattr(post.author, 'gplus') %}
+<a href=" {{- post.author.gplus['url'] -}} " onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=800');return false;" title="Click here to view or subscribe to this person on Google+">
+<img src=" {{- post.author.gplus['image']['url'] -}} "></a>
 {% endif %}
-<A HREF="{{- rec.author.get_local_url() -}}">
-{{ rec.author.name }}
-</A> ( {{- display_datetime(rec.published) -}} )
+<A HREF="{{- post.get_value('author_url') -}}">
+{{ post.get_value('author_name') }}
+</A> ( {{- display_datetime(post.published) -}} )
 </div>
 
-<h3>Recommendation for <A HREF="{{- rec.parent.get_value('local_url') -}}">
-{{ rec.parent.title }}
+<h3>
+{% if post.is_rec() %}
+Recommendation for
+{% else %}
+Comment on 
+{% endif %}
+<A HREF="{{- post.get_value('parent_url') -}}">
+{{ post.parent.title }}
 </a>
-<a href="https://plus.google.com/share? {{- urlencode(dict(url=rec.get_spnet_url())) -}}" onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=600');return false;">
+<a href="https://plus.google.com/share? {{- urlencode(dict(url=post.get_spnet_url())) -}}" onclick="javascript:window.open(this.href, '', 'menubar=no,toolbar=no,resizable=yes,scrollbars=yes,height=600,width=600');return false;">
 <img src="https://www.gstatic.com/images/icons/gplus-32.png" alt="Share on Google+" title="Share this recommendation on Google+"/></a>
 </h3>
+{% if getattr(post, 'citations', False) %}
+Also discusses:
+{% for c in post.citations %}
+<A HREF="{{- c.parent.get_value('local_url') -}}">
+{{ c.parent.title }}
+</A>;
+{% endfor %}
+<BR>
+{% endif %}
+{% if post.get_value('topics') %}
+For topics:
+{% for topic in post.get_value('topics') %}
+<A HREF="{{- topic.get_local_url() -}}"> {{ topic.name }}  </A>
+{% endfor %}
+{% endif %}
 
 <blockquote class="abstract">
-{{ rec.get_text() }}
+{{ post.get_text() }}
 </blockquote>
 
-{% for reply in timesort(rec.get_replies(), reverse=False) %}
+{% for reply in timesort(post.get_replies(), reverse=False) %}
 <A NAME="{{- reply.id -}}"></A>
 <li><A HREF="{{- reply.get_author_url() -}}">
 {{ reply.get_author_name() }}

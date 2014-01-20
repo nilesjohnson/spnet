@@ -3,6 +3,8 @@ from jinja2 import Environment, FileSystemLoader
 import urllib
 from datetime import datetime, timedelta
 import collections
+from sessioninfo import get_session
+import webui
 
 def redirect(path='/', body=None, delay=0):
     'redirect browser, if desired after showing a message'
@@ -102,32 +104,35 @@ class TemplateView(object):
     def __call__(self, doc=None, **kwargs):
         f = self.template.render
         kwargs.update(self.kwargs)
+        session = get_session()
         try:
-            kwargs.update(cherrypy.session['viewArgs'])
+            kwargs.update(session['viewArgs'])
         except KeyError:
             pass
         if doc is not None:
             kwargs[self.name] = doc
         try:
-            user = cherrypy.session['person']
+            user = session['person']
         except KeyError:
-            user = cherrypy.session['person'] = None
-        if getattr(user, '_forceReload', False):
+            user = session['person'] = None
+        if user and user.force_reload():
             user = user.__class__(user._id) # reload from DB
-            cherrypy.session['person'] = user # save on session
+            session['person'] = user # save on session
         return f(kwargs=kwargs, hasattr=hasattr, enumerate=enumerate,
                  urlencode=urllib.urlencode, list_people=people_link_list,
                  getattr=getattr, str=str, map=map_helper, user=user,
                  display_datetime=display_datetime, timesort=timesort,
-                 recentEvents=recentEventsDeque, **kwargs) # apply template
+                 recentEvents=recentEventsDeque, len=len,
+                 messageOfTheDay=messageOfTheDay,
+                 Selection=webui.Selection, **kwargs) # apply template
 
 def get_view_options():
     'get dict of session kwargs passed to view templates'
     try:
-        return cherrypy.session['viewArgs']
+        return get_session()['viewArgs']
     except KeyError:
         d = {}
-        cherrypy.session['viewArgs'] = d
+        get_session()['viewArgs'] = d
         return d
 
 ##################################################################
@@ -225,10 +230,6 @@ def load_recent_events(paperClass, topicClass, dq=recentEventsDeque,
                        limit=20):
     'obtain list of recent events stored in our database'
     l = []
-    for paper in paperClass.find_obj(sortKeys={'recommendations.published':-1},
-                                     limit=limit):
-        for r in getattr(paper, 'recommendations', ()):
-            l.append(r)
     for paper in paperClass.find_obj(sortKeys={'posts.published':-1},
                                      limit=limit):
         for r in getattr(paper, 'posts', ()):
@@ -242,17 +243,22 @@ def load_recent_events(paperClass, topicClass, dq=recentEventsDeque,
     l.sort(lambda x,y:cmp(x.published, y.published)) # oldest first
     for r in l:
         dq.appendleft(r)
-        
+
+
+messageOfTheDay = 'Welcome!'        
         
 def poll_recent_events(paperClass, topicClass, interval=300):
     'update recentEventsDeque every interval; run in separate thread'
     import time
     import gc
+    global messageOfTheDay
     dq = collections.deque(maxlen=20)
     while True:
         load_recent_events(paperClass, topicClass, dq)
         recentEventsDeque.clear()
         recentEventsDeque.extend(dq)
         dq.clear()
+        with open('_templates/motd.html') as ifile:
+            messageOfTheDay = ifile.read()
         gc.collect() # frequent GC seems to keep RSS from growing unsustainably
         time.sleep(interval)
